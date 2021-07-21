@@ -18,7 +18,7 @@ from otp.avatar import DistributedAvatar/AI/UD
 from otp.avatar import DistributedPlayer/AI
 from otp.friends import FriendManager/AI
 from otp.friends import AvatarFriendsManager/UD
-from otp.friends import PlayerFriendsManager
+from otp.friends import PlayerFriendsManager/UD
 from otp.friends import GuildManager/AI/UD
 from otp.friends import FriendInfo
 from otp.friends import AvatarFriendInfo

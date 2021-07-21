@@ -249,7 +249,7 @@ from toontown.parties import DistributedPartyJukebox40Activity/AI
 
 
 //from toontown.friends import TTAvatarFriendsManager/UD
-from toontown.friends import TTPlayerFriendsManager
+from toontown.friends import TTPlayerFriendsManager/UD
 from toontown.uberdog import TTSpeedchatRelay/UD
 
 from toontown.safezone import DistributedGolfKart/AI
