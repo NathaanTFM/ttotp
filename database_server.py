@@ -27,9 +27,9 @@ class DatabaseServer:
         Handle a message
         """
         for channel in channels:
-            if channel in self.databaseCache:
+            if channel in self.cache:
                 di = DatagramIterator(datagram)
-                do = self.databaseCache[channel]
+                do = self.cache[channel]
                 
                 if code == STATESERVER_OBJECT_UPDATE_FIELD:
                     # We are asked to update a field
@@ -93,10 +93,10 @@ class DatabaseServer:
         """
         Load a database object by its id
         """
-        if not doId in self.databaseCache:
+        if not doId in self.cache:
             with open(os.path.join(self.path, str(doId) + ".bin"), "rb") as file:
-                self.databaseCache[doId] = DatabaseObject.fromBinary(self, file.read())
+                self.cache[doId] = DatabaseObject.fromBinary(self, file.read())
         
-        return self.databaseCache[doId]
+        return self.cache[doId]
         
         
