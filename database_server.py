@@ -19,7 +19,7 @@ class DatabaseServer:
         self.path = "database"
         
         if not os.path.exists(self.path):
-            os.path.mkdir(self.path)
+            os.mkdir(self.path)
             
             
     def handle(self, channels, sender, code, datagram):
