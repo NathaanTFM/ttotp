@@ -9,13 +9,19 @@ class DatabaseServer:
         # Main OTP
         self.otp = otp
         
-        # Database server objects
-        self.databaseCache = {}
-        
         # DC File
         self.dc = self.otp.dc
         
+        # Cached DBObjects
+        self.cache = {}
         
+        # Database path
+        self.path = "database"
+        
+        if not os.path.exists(self.path):
+            os.path.mkdir(self.path)
+            
+            
     def handle(self, channels, sender, code, datagram):
         """
         Handle a message
@@ -50,7 +56,7 @@ class DatabaseServer:
             raise NameError(dclassName)
         
         # We get a doId
-        files = os.listdir("database")
+        files = os.listdir(self.path)
         
         if sum(filename.endswith(".bin") for filename in files) == 0:
             doId = 10000000
@@ -79,7 +85,7 @@ class DatabaseServer:
         """
         Save a database object
         """
-        with open(os.path.join("database", str(do.doId) + ".bin"), "wb") as file:
+        with open(os.path.join(self.path, str(do.doId) + ".bin"), "wb") as file:
             file.write(do.toBinary())
         
         
@@ -88,7 +94,7 @@ class DatabaseServer:
         Load a database object by its id
         """
         if not doId in self.databaseCache:
-            with open(os.path.join("database", str(doId) + ".bin"), "rb") as file:
+            with open(os.path.join(self.path, str(doId) + ".bin"), "rb") as file:
                 self.databaseCache[doId] = DatabaseObject.fromBinary(self, file.read())
         
         return self.databaseCache[doId]
