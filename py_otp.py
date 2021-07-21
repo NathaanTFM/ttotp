@@ -17,8 +17,8 @@ class PyOTP:
         
         # DC File
         self.dc = DCFile()
-        self.dc.read(Filename("otp.dc"))
-        self.dc.read(Filename("toon.dc"))
+        self.dc.read(Filename("etc", "otp.dc"))
+        self.dc.read(Filename("etc", "toon.dc"))
         
         # "Handlers"
         self.messageDirector = MessageDirector(self)
