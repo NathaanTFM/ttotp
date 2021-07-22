@@ -20,9 +20,16 @@ class StateServer:
         
         # We add the StateServer Object
         self.objects[20100000] = DistributedObject(20100000, self.dc.getClassByName("ObjectServer"), 0, 0)
+        self.objects[20100000].senderId = 0
         self.objects[20100000].update("setName", "PyOTP")
         self.objects[20100000].update("setDcHash", 798635679)
         self.objects[20100000].update("setDateCreated", int(time.time()))
+        
+        # CentralLogger
+        self.objects[4688] = DistributedObject(4688, self.dc.getClassByName("CentralLogger"), 0, 0)
+        self.objects[4688].senderId = 0
+        
+        
         
         
     def getInterested(self, do, sender):
