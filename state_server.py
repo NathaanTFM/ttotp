@@ -109,29 +109,52 @@ class StateServer:
                     # We are asked to delete an object.
                     
                     # This packet can be sent to the StateServer (20100000)
-                    # or the object channel. We must check if doId matches, and if it doesn't,
-                    # it means the object was not found
+                    # or the object channel.
+                    
+                    # We must check if doId matches, and if it doesn't,
+                    # it means it was sent to the wrong channel or to the SS channel.
                     
                     doId = di.getUint32()
                     if do.doId == doId:
-                        # It was found and accordingly deleted
+                        # It was sent directly to the object, which means it was found
                         dg = Datagram()
                         dg.addUint32(doId)
                         
                         channels = self.getInterested(do, sender)
-                        channels.append(sender)
                         
                         self.messageDirector.sendMessage(channels, sender, STATESERVER_OBJECT_DELETE_RAM, dg)
                         del self.objects[doId]
                         
                         # We announce to clients too (through ClientAgent)
-                        self.clientAgent.announceDelete(do)
+                        self.clientAgent.announceDelete(do, sender)
                         
+                    elif channel == 20100000: # Same as checking do.doId
+                        if doId in self.objects:    
+                            # We found the object.
+                            do = self.objects[doId]
+                            
+                            dg = Datagram()
+                            dg.addUint32(doId)
+                            
+                            # We must send the delete message to everyone, including
+                            # the object itself. The sender will be the state server
+                            channels = self.getInterested(do, 20100000)
+                            
+                            self.messageDirector.sendMessage(channels, 20100000, STATESERVER_OBJECT_DELETE_RAM, dg)
+                            del self.objects[doId]
+                            
+                            # We announce to clients too (through ClientAgent)
+                            self.clientAgent.announceDelete(do, sender)
+                            
+                        
+                        else:
+                            # We answer it was not found
+                            dg = Datagram()
+                            dg.addUint32(doId)
+                            self.messageDirector.sendMessage([sender], 20100000, STATESERVER_OBJECT_NOTFOUND, dg)
+                            
                     else:
-                        # We answer it was not found
-                        dg = Datagram()
-                        dg.addUint32(doId)
-                        self.messageDirector.sendMessage([sender], 20100000, STATESERVER_OBJECT_NOTFOUND, dg)
+                        raise Exception("Received invalid delete object message (channel %d doId %d)" % (channel, doId))
                         
                         
                 elif code == STATESERVER_OBJECT_SET_ZONE:
