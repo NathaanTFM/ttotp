@@ -34,7 +34,8 @@ class StateServer:
         
     def getInterested(self, do, sender):
         """
-        TODO 
+        Get channels interested in those do updates.
+        In a full working otp, this should include a channel for zones.
         """
         channels = set()
         

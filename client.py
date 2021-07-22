@@ -26,6 +26,10 @@ class Client:
         self.avatarId = 0
         self.account = None
         
+        # Cache for interests, so we don't have to iterate through all interests 
+        # every time an object updates.
+        # This could be optimized in other languages, but we're using Python so
+        # we're just gonna use a set
         self.__interestCache = set()
         
         
@@ -54,23 +58,36 @@ class Client:
         msgType = di.getUint16()
         
         if msgType == CLIENT_HEARTBEAT:
-            print("CLIENT_HEARTBEAT")
-            
+            pass # The client is alive, neat. 
             
         elif msgType == CLIENT_CREATE_AVATAR:
-            print("CLIENT_CREATE_AVATAR")
+            # Client wants to create an avatar
+            
+            # We read av info
             contextId = di.getUint16()
             dnaString = di.getBlob()
             avPosition = di.getUint8()
             
+            # Is avPosition valid?
+            if not 0 <= avPosition < 6:
+                raise Exception("Client sent an invalid av position")
+                
+            # Doesn't it already have an avatar at this slot?
+            accountAvSet = self.account.fields["ACCOUNT_AV_SET"]
+            
+            if accountAvSet[avPosition]:
+                raise Exception("Client tried to overwrite an avatar")
+                
+            # We can create the avatar
             avatar = self.databaseServer.createDatabaseObject("DistributedToon")
             avatar.update("setDISLid", self.account.doId)
             avatar.update("setDNAString", dnaString)
             
-            accountAvSet = self.account.fields["ACCOUNT_AV_SET"]
+            # We save the avatar in the account
             accountAvSet[avPosition] = avatar.doId
             self.account.update("ACCOUNT_AV_SET", accountAvSet)
             
+            # We tell the client their new avId!
             datagram = Datagram()
             datagram.addUint16(contextId)
             datagram.addUint8(0) # returnCode
@@ -132,12 +149,22 @@ class Client:
             
             
         elif msgType == CLIENT_SET_WISHNAME:
-            print("CLIENT_SET_WISHNAME")
+            # Client sets his name
+            # We may only allow this if we don't already have a name,
+            # or only have a default name.
+            
+            # But for now, we don't care. TODO
+            if not self.account:
+                raise Exception("Client has no account")
             
             avId = di.getUint32()
+            if avId and not avId in self.account.fields["ACCOUNT_AV_SET"]:
+                raise Exception("Client sets the name of another Toon")
+                
             name = di.getString()
             
-            if avId == 0: # Check
+            if avId == 0:
+                # Client just wants to check the name
                 datagram = Datagram()
                 datagram.addUint32(0)
                 datagram.addUint16(0)
@@ -148,6 +175,8 @@ class Client:
                 self.sendMessage(CLIENT_SET_WISHNAME_RESP, datagram)
             
             else:
+                # Client wants to set the name and we're just gonna
+                # allow him to.
                 avatar = self.databaseServer.loadDatabaseObject(avId)
                 avatar.update("setName", name)
                 
@@ -246,16 +275,23 @@ class Client:
             
             
         elif msgType == CLIENT_DELETE_AVATAR:
-            print("CLIENT_DELETE_AVATAR")
+            # Client wants to delete one of his avatars.
+            # That's sad but let it be.
             avId = di.getUint32()
             
+            # Is that even our avatar?
             accountAvSet = self.account.fields["ACCOUNT_AV_SET"]
+            if not avId in accountAvSet:
+                raise Exception("Client tries to delete an avatar it doesnt own!")
+                
+            # We remove the avatar
             accountAvSet[accountAvSet.index(avId)] = 0
             self.account.update("ACCOUNT_AV_SET", accountAvSet)
             
+            # We tell him it's done and we send him his new av list.
             datagram = Datagram()
             datagram.addUint8(0)
-            self.addAvatarList(datagram)
+            self.writeAvatarList(datagram)
             self.sendMessage(CLIENT_DELETE_AVATAR_RESP, datagram)
             
             
@@ -380,10 +416,15 @@ class Client:
             
             
         elif msgType == CLIENT_GET_AVATARS:
-            print("CLIENT_GET_AVATARS")
+            # Client asks us their avatars.
+            if not self.account:
+                # TODO Should we boot the client out or just set a bad returnCode?
+                # For now we'll throw an exception as this should never happen.
+                raise Exception("Client asked avatars with no account")
+                
             dg = Datagram()
             dg.addUint8(0) # returnCode
-            self.addAvatarList(dg)
+            self.writeAvatarList(dg)
             self.sendMessage(CLIENT_GET_AVATARS_RESP, dg)
             
             
@@ -396,11 +437,9 @@ class Client:
             
             
         elif msgType == CLIENT_OBJECT_UPDATE_FIELD:
+            # Client wants to update a do object
             doId = di.getUint32()
             fieldId = di.getUint16()
-            
-            # For debugs sake, we're gonna print the dclass and field name next to the msgType name 
-            print("CLIENT_OBJECT_UPDATE_FIELD", doId, self.stateServer.objects[doId].dclass.getName(), self.stateServer.objects[doId].dclass.getFieldByIndex(fieldId).getName())
             
             dg = Datagram()
             dg.addUint32(doId)
@@ -420,6 +459,15 @@ class Client:
             if not (field.isClsend() or (field.isOwnsend() and do.doId == self.avatarId)): # We probably should check for owner stuff too but Toontown does not implement it
                 raise Exception("Attempt to update a field but we don't have the rights")
             
+            # Ignore DistributedNode and DistributedSmoothNode fields for debugging
+            if field.getName() not in ("setX", "setY", "setZ", "setH", "setP", "setR", "setPos", "setHpr", "setPosHpr", "setXY", "setXZ", "setXYH", "setXYZH",
+                                       "setComponentL", "setComponentX", "setComponentY", "setComponentZ", "setComponentH", "setComponentP", "setComponentR", "setComponentT",
+                                       "setSmStop", "setSmH", "setSmZ", "setSmXY", "setSmXZ", "setSmPos", "setSmHpr", "setSmXYZH", "setSmPosHpr", "setSmPosHprL",
+                                       "clearSmoothing", "suggestResync", "returnResync"):
+                               
+                print("Avatar %d updates %d (dclass %s) field %s" % (self.avatarId, do.doId, do.dclass.getName(), field.getName()))
+                
+                
             if doId == self.avatarId and fieldId == self.agent.setTalkFieldId:
                 # Weird case: it's broadcasting and the others can see the chat, but the client
                 # does not receive it has he sent it.
@@ -428,15 +476,21 @@ class Client:
                 self.messageDirector.sendMessage([doId], 4681, STATESERVER_OBJECT_UPDATE_FIELD, dg)
                 
             else:
+                # We just send the update to the StateServer.
                 self.messageDirector.sendMessage([doId], self.avatarId, STATESERVER_OBJECT_UPDATE_FIELD, dg)
             
             
         elif msgType == CLIENT_OBJECT_LOCATION:
-            print("CLIENT_OBJECT_LOCATION")
+            # Client wants to move an object
             doId = di.getUint32()
             parentId = di.getUint32()
             zoneId = di.getUint32()
             
+            # Can we move it?
+            if doId != self.avatarId:
+                raise Exception("Client wants to move an object it doesn't own")
+                
+            # We tell the StateServer that we're moving an object.
             dg = Datagram()
             dg.addUint32(parentId)
             dg.addUint32(zoneId)
@@ -444,7 +498,7 @@ class Client:
             
             
         else:
-            print("Received unknown message ID %d" % msgType)
+            print("Received unknown message: %d" % msgType)
             
         #else:
             #raise NotImplementedError(msgType)
@@ -453,9 +507,16 @@ class Client:
             #raise Exception("remaining", di.getRemainingBytes())
             
             
-    def addAvatarList(self, dg):
-        dg.addUint16(sum(n != 0 for n in self.account.fields["ACCOUNT_AV_SET"])) # avatarTotal
+    def writeAvatarList(self, dg):
+        """
+        Add client avatar list to a datagram
+        """
+        accountAvSet = self.account.fields["ACCOUNT_AV_SET"]
         
+        # Avatar count
+        dg.addUint16(sum(n != 0 for n in accountAvSet)) # avatarTotal
+        
+        # We send every avatar
         for pos, avId in enumerate(self.account.fields["ACCOUNT_AV_SET"]):
             if avId == 0:
                 continue
@@ -474,6 +535,9 @@ class Client:
         
         
     def sendMessage(self, code, datagram):
+        """
+        Send a message
+        """
         dg = Datagram()
         dg.addUint16(code)
         dg.appendData(datagram.getMessage())
@@ -481,6 +545,9 @@ class Client:
         
         
     def sendDatagram(self, dg):
+        """
+        Send a datagram
+        """
         self.sock.send(struct.pack("<H", dg.getLength()))
         self.sock.send(bytes(dg))
         
@@ -508,14 +575,19 @@ class Client:
     def sendObjects(self, parentId, zones):
         objects = []
         for do in self.stateServer.objects.values():
+            # We're not sending our own object because
+            # we already know who we are (we are the owner)
             if do.doId == self.avatarId:
                 continue
                 
+            # If the object is in one of the new interest zones, we get it
             if do.parentId == parentId and do.zoneId in zones:
                 objects.append(do)
                 
-                
+        # We sort them by dclass (fix some issues)
         objects.sort(key = lambda x: x.dclass.getNumber())
+        
+        # We send every object
         for do in objects:
             dg = Datagram()
             dg.addUint32(do.parentId)

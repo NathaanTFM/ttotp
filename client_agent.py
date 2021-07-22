@@ -99,22 +99,27 @@ class ClientAgent:
         do.packOther(dg)
         
         for client in self.clients:
+            # No echo pls
             if client.avatarId == sender:
                 continue
                 
+            # We send the object creation if we're the owner or if we're interested.
             if client.hasInterest(do.parentId, do.zoneId) or do.doId == client.avatarId:
                 client.sendMessage(CLIENT_CREATE_OBJECT_REQUIRED_OTHER, dg)
         
         
-    def announceDelete(self, do):
+    def announceDelete(self, do, sender):
+        # We're deleting an object
         dg = Datagram()
         dg.addUint32(do.doId)
         
         for client in self.clients:
-            if do.doId == client.avatarId:
-                continue # TODO what should we do here we just got deleted ffs
+            # Not retransmitting
+            if do.doId == sender:
+                continue
                 
-            if client.hasInterest(do.parentId, do.zoneId):
+            # We tell the client that it's disabled only if they're interested OR the owner.
+            if client.hasInterest(do.parentId, do.zoneId) or do.doId == client.avatarId:
                 client.sendMessage(CLIENT_OBJECT_DISABLE, dg)
         
         
@@ -153,7 +158,6 @@ class ClientAgent:
                 
             # If we're interested in the previous area
             elif client.hasInterest(prevParentId, prevZoneId):
-                
                 # If we're interested in the new area,
                 # we can just tell the client that the object moved
                 if client.hasInterest(do.parentId, do.zoneId):
