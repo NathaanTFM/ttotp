@@ -30,7 +30,9 @@ class Client:
         
         
     def onLost(self):
-        pass
+        # We remove the avatar if we're disconnecting. Bye!
+        if self.avatarId:
+            self.chooseAvatar(0)
         
         
     def onData(self, data):
@@ -386,48 +388,13 @@ class Client:
             
             
         elif msgType == CLIENT_SET_AVATAR:
-            print("CLIENT_SET_AVATAR")
+            # Client picked an avatar.
+            # If avId is 0, it disconnected.
             avId = di.getUint32()
             
-            if self.avatarId and avId:
-                raise Exception("Double auth?")
-                
-            if avId:
-                if not avId in self.account.fields["ACCOUNT_AV_SET"]:
-                    raise Exception("Invalid avatar?")
-                    
-                self.avatarId = avId
-                
-                avatar = self.databaseServer.loadDatabaseObject(self.avatarId)
-                
-                # We ask STATESERVER to create our object
-                dg = Datagram()
-                dg.addUint32(0)
-                dg.addUint32(0)
-                dg.addUint16(avatar.dclass.getNumber())
-                dg.addUint32(avatar.doId)
-                avatar.packRequired(dg)
-                avatar.packOther(dg)
-                self.messageDirector.sendMessage([20100000], self.avatarId, STATESERVER_OBJECT_GENERATE_WITH_REQUIRED_OTHER, dg)
-                
-                # We probably should wait for an answer, but we're not threaded and everything is happening on the same script
-                # (tl;dr it's blocking), so we won't.
-                
-                # We can send that we are the proud owner of a DistributedToon!
-                dg = Datagram()
-                dg.addUint32(avatar.doId)
-                dg.addUint8(0)
-                avatar.packRequired(dg)
-                self.sendMessage(CLIENT_GET_AVATAR_DETAILS_RESP, dg)
-                
-            else:                
-                # We ask STATESERVER to delete our object
-                dg = Datagram()
-                dg.addUint32(self.avatarId)
-                self.messageDirector.sendMessage([self.avatarId], self.avatarId, STATESERVER_OBJECT_DELETE_RAM, dg)
-                self.avatarId = 0
-                
-        
+            self.chooseAvatar(avId)
+            
+            
         elif msgType == CLIENT_OBJECT_UPDATE_FIELD:
             doId = di.getUint32()
             fieldId = di.getUint16()
@@ -560,3 +527,49 @@ class Client:
             self.sendMessage(CLIENT_CREATE_OBJECT_REQUIRED_OTHER, dg)
             
             
+    def chooseAvatar(self, avId):
+        """
+        Choose an avatar
+        """
+        if avId:
+            if self.avatarId:
+                raise Exception("Client tried to pick an avatar but it already has one")
+                
+            if not avId in self.account.fields["ACCOUNT_AV_SET"]:
+                raise Exception("Client tried to pick an avatar it doesn't own")
+            
+            # We load the avatar from the database
+            avatar = self.databaseServer.loadDatabaseObject(avId)
+            
+            # We ask STATESERVER to create our object
+            dg = Datagram()
+            dg.addUint32(0)
+            dg.addUint32(0)
+            dg.addUint16(avatar.dclass.getNumber())
+            dg.addUint32(avatar.doId)
+            avatar.packRequired(dg)
+            avatar.packOther(dg)
+            self.messageDirector.sendMessage([20100000], avatar.doId, STATESERVER_OBJECT_GENERATE_WITH_REQUIRED_OTHER, dg)
+            
+            # We probably should wait for an answer, but we're not threaded and everything is happening on the same script
+            # (tl;dr it's blocking), so we won't.
+            
+            # We remember who we are
+            self.avatarId = avatar.doId
+            
+            # We can send that we are the proud owner of a DistributedToon!
+            dg = Datagram()
+            dg.addUint32(avatar.doId)
+            dg.addUint8(0)
+            avatar.packRequired(dg)
+            self.sendMessage(CLIENT_GET_AVATAR_DETAILS_RESP, dg)
+            
+        else:
+            if not self.avatarId:
+                raise Exception("Client tried to remove his avatar but it already has none")
+                
+            # We ask State Server to delete our object
+            dg = Datagram()
+            dg.addUint32(self.avatarId)
+            self.messageDirector.sendMessage([self.avatarId], self.avatarId, STATESERVER_OBJECT_DELETE_RAM, dg)
+            self.avatarId = 0
