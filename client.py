@@ -373,15 +373,29 @@ class Client:
                 
         
         elif msgType == CLIENT_OBJECT_UPDATE_FIELD:
-            print("CLIENT_OBJECT_UPDATE_FIELD")
             doId = di.getUint32()
             fieldId = di.getUint16()
+            
+            # For debugs sake, we're gonna print the dclass and field name next to the msgType name 
+            print("CLIENT_OBJECT_UPDATE_FIELD", doId, self.stateServer.objects[doId].dclass.getName(), self.stateServer.objects[doId].dclass.getFieldByIndex(fieldId).getName())
             
             dg = Datagram()
             dg.addUint32(doId)
             dg.addUint16(fieldId)
             dg.appendData(di.getRemainingBytes())
             
+            # Can we send this field?
+            if not doId in self.stateServer.objects:
+                raise Exception("Attempt to update a field but DoId not found")
+            
+            do = self.stateServer.objects[doId]
+            
+            field = do.dclass.getFieldByIndex(fieldId)
+            if not field:
+                raise Exception("Attempt to update a field but it was not found")
+                
+            if not (field.isClsend() or (field.isOwnsend() and do.doId == self.avatarId)): # We probably should check for owner stuff too but Toontown does not implement it
+                raise Exception("Attempt to update a field but we don't have the rights")
             
             if doId == self.avatarId and fieldId == self.agent.setTalkFieldId:
                 # Weird case: it's broadcasting and the others can see the chat, but the client
