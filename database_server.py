@@ -27,6 +27,31 @@ class DatabaseServer:
         Handle a message
         """
         for channel in channels:
+            if channel == 4003:
+                if code == DBSERVER_GET_STORED_VALUES:
+                    print("DBSERVER_GET_STORED_VALUES")
+                    
+                elif code == DBSERVER_SET_STORED_VALUES:
+                    print("DBSERVER_SET_STORED_VALUES")
+                    
+                elif code == DBSERVER_CREATE_STORED_OBJECT:
+                    print("DBSERVER_CREATE_STORED_OBJECT")
+                    
+                elif code == DBSERVER_GET_ESTATE:
+                    print("DBSERVER_GET_ESTATE")
+                    
+                elif code == DBSERVER_MAKE_FRIENDS:
+                    print("DBSERVER_MAKE_FRIENDS")
+                    
+                elif code == DBSERVER_REQUEST_SECRET:
+                    print("DBSERVER_REQUEST_SECRET")
+                    
+                elif code == DBSERVER_SUBMIT_SECRET:
+                    print("DBSERVER_SUBMIT_SECRET")
+                    
+                else:
+                    raise Exception("Unknown message on DBServer channel: %d" % code)
+                    
             if channel in self.cache:
                 di = DatagramIterator(datagram)
                 do = self.cache[channel]
