@@ -257,49 +257,65 @@ class Client:
             self.sendMessage(CLIENT_DELETE_AVATAR_RESP, datagram)
             
             
-            
         elif msgType == CLIENT_ADD_INTEREST:
-            print("CLIENT_ADD_INTEREST")
+            # Client wants to add or replace an interest
             handle = di.getUint16()
             contextId = di.getUint32()
             parentId = di.getUint32()
             
+            # We get every zone in the interest, including visibles zones from our visgroup
             zones = set()
             while di.getRemainingSize():
                 zoneId = di.getUint32()
+                if zoneId == 1:
+                    # No we don't want you Quiet Zone
+                    continue 
+                    
                 zones.add(zoneId)
                 
-                canonicalZoneId = getCanonicalZoneId(zoneId)
-
                 # We add visibles
+                canonicalZoneId = getCanonicalZoneId(zoneId)
+                
                 if canonicalZoneId in self.agent.visgroups:
                     for visZoneId in self.agent.visgroups[canonicalZoneId]:
                         zones.add(getTrueZoneId(visZoneId, zoneId))
                     
+                    # We want to add the "main" zone, i.e 2200 for 2205, etc
                     zones.add(zoneId - zoneId % 100)
             
-            #
+            # This is set to an empty tuple because it's only defined if
+            # it's overwriting an interest, but needed anyway.
             oldZones = ()
             
             if handle in self.interests:
-                # Shit, this is an interest overwrite
+                # Our interest is overwriting another interest:
+                #
+                # - if the parent id is different, we're just gonna remove it by
+                #   disabling every object present in the old zones if we're not interested
+                #   in them anymore.
+                #
+                # - if it's the same parent id, we're gonna do some intersection stuff and
+                #   only send from the new zones and remove from the old zones,
+                #   basically not sending anything for the zones in the intersection
+                
+                # We get the old interest
                 oldParentId, oldZones = self.interests[handle]
                 
+                # We remove it
                 del self.interests[handle]
                 self.updateInterestCache()
                 
+                # We gotta disable the objects we can't see anymore,
                 if oldParentId == parentId:
-                    # We gotta disable the objects we can't see anymore,
                     for do in self.stateServer.objects.values():
                         # If the object is not visible anymore, we disable it
-                        # (it's in the removed zones, but not in the new interest or any current interest)
+                        # (it's in the removed interest zones, but not in the new interest (or any current interest) zones)
                         if do.parentId == parentId and do.zoneId in oldZones and not (do.zoneId in zones or self.hasInterest(do.parentId, do.zoneId)):
                             dg = Datagram()
                             dg.addUint32(do.doId)
                             self.sendMessage(CLIENT_OBJECT_DISABLE, dg)
                     
                 else:
-                    # We gotta disable the objects we can't see anymore
                     # We only check if we're no longer interested in
                     for do in self.stateServer.objects.values():
                         if do.parentId == oldParentId and do.zoneId in oldZones and not self.hasInterest(do.parentId, do.zoneId):
@@ -308,19 +324,23 @@ class Client:
                             self.sendMessage(CLIENT_OBJECT_DISABLE, dg)
                 
                     # We set oldZones to an empty tuple
+                    # (because we're ignoring them as parentId is difference)
                     oldZones = ()
                     
             # We send the newly visible objects
             newZones = []
             for zoneId in zones:
-                if not zoneId in oldZones and not self.hasInterest(parentId, zoneId) and zoneId != 1:
+                if not zoneId in oldZones and not self.hasInterest(parentId, zoneId):
                     newZones.append(zoneId)
                     
+            # We have got a new zone list, we can finally send the objects.
             self.sendObjects(parentId, newZones)
             
+            # We save the interest
             self.interests[handle] = (parentId, zones)
             self.updateInterestCache()
             
+            # We tell the client we're done
             dg = Datagram()
             dg.addUint16(handle)
             dg.addUint32(contextId)
@@ -328,21 +348,29 @@ class Client:
             
             
         elif msgType == CLIENT_REMOVE_INTEREST:
-            print("CLIENT_REMOVE_INTEREST")
+            # Client wants to remove an interest
             handle = di.getUint16()
             contextId = di.getUint32() # Might be optional
             
+            # Did the interest exist?
+            if not handle in self.interests:
+                raise Exception("Client tried to remove an unexisting interest")
+                
+            # We get what the interest was
             oldParentId, oldZones = self.interests[handle]
             
+            # We remove the interest
             del self.interests[handle]
             self.updateInterestCache()
             
+            # We disable all the objects we're no longer interested in
             for do in self.stateServer.objects.values():
                 if do.parentId == oldParentId and do.zoneId in oldZones and not self.hasInterest(do.parentId, do.zoneId):
                     dg = Datagram()
                     dg.addUint32(do.doId)
                     self.sendMessage(CLIENT_OBJECT_DISABLE, dg)
             
+            # We tell the client we're done
             dg = Datagram()
             dg.addUint16(handle)
             dg.addUint32(contextId)
@@ -491,18 +519,11 @@ class Client:
         
         
     def hasInterest(self, parentId, zoneId):
-        if zoneId == 1:
-            return False
-            
+        """
+        Check if we're interested in a zone
+        """
+        # Do we have this intereste cached?
         return (parentId, zoneId) in self.__interestCache
-        
-        """for handle in self.interests:
-            handleParentId, handleZones = self.interests[handle]
-            
-            if handleParentId == parentId and zoneId in handleZones:
-                return True
-                
-        return False"""
         
         
     def updateInterestCache(self):
