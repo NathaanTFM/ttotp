@@ -77,12 +77,21 @@ class Client:
             
             
         elif msgType == CLIENT_SET_NAME_PATTERN:
-            print("CLIENT_SET_NAME_PATTERN")
+            # Client sets his name
+            # We may only allow this if we don't already have a name,
+            # or only have a default name.
+            
+            # But for now, we don't care. TODO
+            if not self.account:
+                raise Exception("Client has no account")
+                
             nameIndices = []
             nameFlags = []
             
             avId = di.getUint32()
-            
+            if not avId in self.account.fields["ACCOUNT_AV_SET"]:
+                raise Exception("Client sets the name of another Toon")
+                
             nameIndices.append(di.getInt16())
             nameFlags.append(di.getInt16())
             nameIndices.append(di.getInt16())
@@ -92,9 +101,28 @@ class Client:
             nameIndices.append(di.getInt16())
             nameFlags.append(di.getInt16())
             
+            # TODO: Check if the name is valid (incl KeyError)
+            # King King KingKing is NOT a valid name.
+            
+            name = ""
+            for index in range(4):
+                indice, flag = nameIndices[index], nameFlags[index]
+                if indice != -1:
+                    namePartType, namePart = self.agent.nameDictionary[indice]
+                    if flag:
+                        namePart = namePart.capitalize()
+                        
+                    # %s %s %s%s
+                    if index != 3:
+                        name += " "
+                        
+                    name += namePart
+            
+            # We set the toon's name
             avatar = self.databaseServer.loadDatabaseObject(avId)
-            avatar.update("setName", "Unnamed Toon")
+            avatar.update("setName", name.strip())
             
+            # We tell the client that their new name is accepted
             datagram = Datagram()
             datagram.addUint32(avatar.doId)
             datagram.addUint8(0)

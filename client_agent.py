@@ -74,7 +74,17 @@ class ClientAgent:
         for visgroup in dnaStore.visGroups:
             self.visgroups[int(visgroup.name)] = [int(i) for i in visgroup.visibles]
             
-            
+        # We read the NameMaster
+        self.nameDictionary = {}
+        with open("etc/NameMaster.txt", "r") as file:
+            for line in file:
+                if line.startswith("#"):
+                    continue
+                    
+                nameId, nameCategory, name = line.split("*", 2)
+                self.nameDictionary[int(nameId)] = (int(nameCategory), name.strip())
+                
+        # Special fields IDs (cache)
         self.setTalkFieldId = self.dc.getClassByName("TalkPath_owner").getFieldByName("setTalk").getNumber()
         
             
