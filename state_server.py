@@ -63,7 +63,7 @@ class StateServer:
                     dg.addUint16(do.dclass.getNumber())
                     dg.addUint32(do.doId)
                     do.packRequired(dg)
-                    do.packOther(dg)
+                    do.packOther(dg) # TODO Should we check for airecv?
                     
                     self.messageDirector.sendMessage([sender], 20100000, STATESERVER_QUERY_OBJECT_ALL_RESP, dg)
                     
@@ -89,6 +89,10 @@ class StateServer:
                     # We transmit the update if it was not sent by the owner
                     channels = self.getInterested(do, sender)
                     
+                    # We did not implement airecv fields yet so let's do it.
+                    if not field.isAirecv() and do.senderId in channels:
+                        channels.remove(do.senderId)
+                        
                     if channels:
                         dg = Datagram()
                         dg.addUint32(doId)
@@ -174,7 +178,7 @@ class StateServer:
                                 dg.addUint16(do.dclass.getNumber())
                                 dg.addUint32(do.doId)
                                 do.packRequired(dg)
-                                do.packOther(dg)
+                                do.packOther(dg) # TODO Should we check for airecv?
                                 
                                 self.messageDirector.sendMessage(channels, sender, STATESERVER_OBJECT_ENTERZONE_WITH_REQUIRED_OTHER, dg)
                     
@@ -217,7 +221,7 @@ class StateServer:
                             dg.addUint16(do.dclass.getNumber())
                             dg.addUint32(do.doId)
                             do.packRequired(dg)
-                            do.packOther(dg)
+                            do.packOther(dg) # TODO Should we check for airecv?
                             
                             self.messageDirector.sendMessage(channels, sender, STATESERVER_OBJECT_ENTERZONE_WITH_REQUIRED_OTHER, dg)
                             
