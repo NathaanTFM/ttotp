@@ -382,7 +382,16 @@ class Client:
             dg.addUint16(fieldId)
             dg.appendData(di.getRemainingBytes())
             
-            self.messageDirector.sendMessage([doId], self.avatarId, STATESERVER_OBJECT_UPDATE_FIELD, dg)
+            
+            if doId == self.avatarId and fieldId == self.agent.setTalkFieldId:
+                # Weird case: it's broadcasting and the others can see the chat, but the client
+                # does not receive it has he sent it.
+                
+                # We will change the sender to 4681 (Chat Manager) to bypass this problem
+                self.messageDirector.sendMessage([doId], 4681, STATESERVER_OBJECT_UPDATE_FIELD, dg)
+                
+            else:
+                self.messageDirector.sendMessage([doId], self.avatarId, STATESERVER_OBJECT_UPDATE_FIELD, dg)
             
             
         elif msgType == CLIENT_OBJECT_LOCATION:

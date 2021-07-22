@@ -75,6 +75,9 @@ class ClientAgent:
             self.visgroups[int(visgroup.name)] = [int(i) for i in visgroup.visibles]
             
             
+        self.setTalkFieldId = self.dc.getClassByName("TalkPath_owner").getFieldByName("setTalk").getNumber()
+        
+            
     def announceCreate(self, do, sender):
         # We send to the interested clients that they have access to a brand new object!
         dg = Datagram()
