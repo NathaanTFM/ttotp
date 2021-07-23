@@ -519,7 +519,7 @@ class Client:
             # Pack our data to go to the client.
             packedData = self.packDetails(dclass, fields)
 
-            # Tell the client about the response.
+            # Prepare the client response.
             dg = Datagram()
             dg.addUint32(doId)
             dg.addUint8(0)
