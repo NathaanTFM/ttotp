@@ -58,7 +58,8 @@ class Client:
         msgType = di.getUint16()
 
         if msgType == CLIENT_HEARTBEAT:
-            pass # The client is alive, neat.
+            # TODO: Keep track of heartbeats.
+            self.sendMessage(CLIENT_HEARTBEAT, dg)
 
         elif msgType == CLIENT_CREATE_AVATAR:
             # Client wants to create an avatar
