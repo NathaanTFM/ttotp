@@ -189,7 +189,6 @@ class Client:
 
                 self.sendMessage(CLIENT_SET_WISHNAME_RESP, datagram)
 
-
         elif msgType == CLIENT_LOGIN_2:
             print("CLIENT_LOGIN_2")
             playToken = di.getString()
@@ -210,7 +209,6 @@ class Client:
                 with open(accFile, "w") as f:
                     f.write(str(self.account.doId))
 
-
             datagram = Datagram()
             datagram.addUint8(0) # returnCode
             datagram.addString("") # errorString
@@ -222,14 +220,13 @@ class Client:
             datagram.addUint32(int(usec * 1000000))
 
             datagram.addUint8(1) # isPaid
-            datagram.addInt32(-1) # minutesRemaining
+            datagram.addInt32(1000 * 60 * 60) # minutesRemaining
 
             datagram.addString("") # familyStr, unused
             datagram.addString("YES") # whiteListChatEnabled
             datagram.addInt32(100000) # accountDays
-            datagram.addString("01/01/01 00:00")
+            datagram.addString(time.strftime("%Y-%m-%d %H:%M:%S")) # lastLoggedInStr
             self.sendMessage(CLIENT_LOGIN_2_RESP, datagram)
-
 
         elif msgType == CLIENT_LOGIN_TOONTOWN:
             print("CLIENT_LOGIN_TOONTOWN")
@@ -250,7 +247,6 @@ class Client:
                 with open(accFile, "w") as f:
                     f.write(str(self.account.doId))
 
-
             datagram = Datagram()
             datagram.addUint8(0) # returnCode
             datagram.addString("") # respString (in case of error)
@@ -267,12 +263,11 @@ class Client:
 
             datagram.addString("FULL") # access
             datagram.addString("YES") # whiteListChat
-            datagram.addString("01/01/01 00:00")
+            datagram.addString(time.strftime("%Y-%m-%d %H:%M:%S")) # lastLoggedInStr
             datagram.addInt32(100000) # accountDays
             datagram.addString("NO_PARENT_ACCOUNT")
             datagram.addString(playToken) # userName - not saved in our db so we're just putting a placeholder
             self.sendMessage(CLIENT_LOGIN_TOONTOWN_RESP, datagram)
-
 
         elif msgType == CLIENT_DELETE_AVATAR:
             # Client wants to delete one of his avatars.
@@ -293,7 +288,6 @@ class Client:
             datagram.addUint8(0)
             self.writeAvatarList(datagram)
             self.sendMessage(CLIENT_DELETE_AVATAR_RESP, datagram)
-
 
         elif msgType == CLIENT_ADD_INTEREST:
             # Client wants to add or replace an interest
@@ -414,7 +408,6 @@ class Client:
             dg.addUint32(contextId)
             self.sendMessage(CLIENT_DONE_INTEREST_RESP, dg)
 
-
         elif msgType == CLIENT_GET_AVATARS:
             # Client asks us their avatars.
             if not self.account:
@@ -426,7 +419,6 @@ class Client:
             dg.addUint8(0) # returnCode
             self.writeAvatarList(dg)
             self.sendMessage(CLIENT_GET_AVATARS_RESP, dg)
-
 
         elif msgType == CLIENT_SET_AVATAR:
             # Client picked an avatar.
@@ -619,7 +611,6 @@ class Client:
                 self.__interestCache.add((parentId, zoneId))
 
         return False
-
 
     def sendObjects(self, parentId, zones):
         objects = []
