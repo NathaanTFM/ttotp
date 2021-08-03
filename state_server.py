@@ -20,14 +20,12 @@ class StateServer:
         
         # We add the StateServer Object
         self.objects[20100000] = DistributedObject(20100000, self.dc.getClassByName("ObjectServer"), 0, 0)
-        self.objects[20100000].senderId = 0
         self.objects[20100000].update("setName", "PyOTP")
         self.objects[20100000].update("setDcHash", 798635679)
         self.objects[20100000].update("setDateCreated", int(time.time()))
         
         # CentralLogger
         self.objects[4688] = DistributedObject(4688, self.dc.getClassByName("CentralLogger"), 0, 0)
-        self.objects[4688].senderId = 0
         
         
         
@@ -39,6 +37,9 @@ class StateServer:
         """
         channels = set()
         
+        if do.senderId:
+            channels.add(do.senderId)
+        
         if do.parentId in self.objects:
             channels.add(self.objects[do.parentId].senderId)
         
@@ -46,6 +47,29 @@ class StateServer:
             channels.remove(sender)
             
         return list(channels)
+        
+        
+    def deleteObject(self, do, sender):
+        """
+        Delete an object and transmits the deletion
+        """
+        assert self.objects[do.doId] == do, "wrong object"
+        
+        # We can delete the object
+        del self.objects[do.doId]
+        
+        # We should tell everyone the object is gone
+        # Write the delete ram packet
+        dg = Datagram()
+        dg.addUint32(do.doId)
+        
+        # We send the update to the interested OTP clients
+        channels = self.getInterested(do, sender)
+        if channels:
+            self.messageDirector.sendMessage(channels, sender, STATESERVER_OBJECT_DELETE_RAM, dg)
+        
+        # We announce to game clients too (through ClientAgent)
+        self.clientAgent.announceDelete(do, sender)
         
         
     def handle(self, channels, sender, code, datagram):
@@ -125,36 +149,14 @@ class StateServer:
                     doId = di.getUint32()
                     if do.doId == doId:
                         # It was sent directly to the object, which means it was found
-                        dg = Datagram()
-                        dg.addUint32(doId)
-                        
-                        channels = self.getInterested(do, sender)
-                        
-                        self.messageDirector.sendMessage(channels, sender, STATESERVER_OBJECT_DELETE_RAM, dg)
-                        del self.objects[doId]
-                        
-                        # We announce to clients too (through ClientAgent)
-                        self.clientAgent.announceDelete(do, sender)
+                        self.deleteObject(do, sender)
                         
                     elif channel == 20100000: # Same as checking do.doId
-                        if doId in self.objects:    
-                            # We found the object.
-                            do = self.objects[doId]
+                        if doId in self.objects:
+                            # It was sent to the state server,
+                            # which means the state server handles the deletion of the object
+                            self.deleteObject(self.objects[doId], 20100000)
                             
-                            dg = Datagram()
-                            dg.addUint32(doId)
-                            
-                            # We must send the delete message to everyone, including
-                            # the object itself. The sender will be the state server
-                            channels = self.getInterested(do, 20100000)
-                            
-                            self.messageDirector.sendMessage(channels, 20100000, STATESERVER_OBJECT_DELETE_RAM, dg)
-                            del self.objects[doId]
-                            
-                            # We announce to clients too (through ClientAgent)
-                            self.clientAgent.announceDelete(do, sender)
-                            
-                        
                         else:
                             # We answer it was not found
                             dg = Datagram()
@@ -179,7 +181,7 @@ class StateServer:
                     do.zoneId = zoneId
                     
                     # We announce the object was moved if it was not asked by the "owner"
-                    if sender != self.objects[do.parentId].senderId:
+                    if do.parentId in self.objects and sender != self.objects[do.parentId].senderId:
                         if prevParentId == do.parentId:
                             # Parent id is the same: just send the update to the old a new zone
                             channels = self.getInterested(do, sender)
@@ -260,6 +262,24 @@ class StateServer:
                         self.clientAgent.announceCreate(do, sender)
                         
                         
+                    elif code == STATESERVER_SHARD_REST:
+                        # Shard is going down.
+                        # We gotta delete its objects.
+                        shardId = di.getUint64()
+                        
+                        # We get every object to delete,
+                        # which means we look for the objects created by this shard,
+                        # or every object parented to it.
+                        objects = []
+                        for do in self.objects.values():
+                            if do.senderId == shardId or (do.parentId in self.objects and self.objects[do.parentId].senderId == shardId):
+                                objects.append(do)
+                        
+                        # We got all the objects, we can now delete them.
+                        # The state server deletes the object, so we set the sender to 20100000.
+                        for do in objects:
+                            self.deleteObject(do, 20100000)
+                            
                     else:
                         raise NotImplementedError("Received %d on stateserver channel" % code)
                         

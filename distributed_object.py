@@ -9,6 +9,8 @@ class DistributedObject:
         self.parentId = parentId
         self.zoneId = zoneId
         
+        self.senderId = None
+        
         self.fields = {}
         
         for index in range(self.dclass.getNumInheritedFields()):

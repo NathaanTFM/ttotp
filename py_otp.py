@@ -63,7 +63,6 @@ class PyOTP:
                     data = None
                     
                 if not data:
-                    client.onLost()
                     del self.clients[sock]
                     
                     if type(client) == MDClient:
@@ -71,6 +70,8 @@ class PyOTP:
                         
                     elif type(client) == Client:
                         self.clientAgent.clients.remove(client)
+                    
+                    client.onLost()
                     
                 else:
                     client.onData(data)
