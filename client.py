@@ -32,7 +32,33 @@ class Client:
         # This could be optimized in other languages, but we're using Python so
         # we're just gonna use a set
         self.__interestCache = set()
-
+        
+        
+    def disconnect(self, index=None):
+        datagram = Datagram()
+        if index:
+            datagram.addUint16(index)
+            datagram.addString("") # TODO: get string from index
+            
+        self.sendMessage(CLIENT_GO_GET_LOST, datagram)
+        
+        # Now we disconnect the client
+        self.sock.close()
+        
+        # This is not gonna call itself
+        self.onLost()
+        
+        # Now we delete the client from OTP
+        del self.otp.clients[self.sock]
+        self.agent.clients.remove(self)
+        
+        
+    def onAvatarDelete(self):
+        # Our avatar got deleted
+        self.avatarId = 0
+        self.disconnect(153)
+        
+        
     def onLost(self):
         # We remove the avatar if we're disconnecting. Bye!
         if self.avatarId:

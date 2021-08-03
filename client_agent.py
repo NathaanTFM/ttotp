@@ -115,11 +115,16 @@ class ClientAgent:
         
         for client in self.clients:
             # Not retransmitting
-            if do.doId == sender:
+            if client.avatarId == sender:
                 continue
                 
-            # We tell the client that it's disabled only if they're interested OR the owner.
-            if client.hasInterest(do.parentId, do.zoneId) or do.doId == client.avatarId:
+            # If the client is the owner, we're in a special case and we're not sending the packet
+            if do.doId == client.avatarId:
+                client.onAvatarDelete()
+            
+            # We tell the client that it's disabled only if they're interested or the owner.
+            # (Please note this last condition here is useless but it's meant to be replaced if owner view is implemented some day)
+            elif client.hasInterest(do.parentId, do.zoneId) or do.doId == client.avatarId:
                 client.sendMessage(CLIENT_OBJECT_DISABLE, dg)
         
         
@@ -207,7 +212,10 @@ class ClientAgent:
         """
         for channel in channels:
             for client in self.clients:
-                if client.avatarId is not None and channel == client.avatarId + (1<<32):
+                if client.avatarId is None:
+                    continue
+                    
+                if channel == client.avatarId + (1<<32):
                     if code == STATESERVER_OBJECT_UPDATE_FIELD:
                         client.sendMessage(CLIENT_OBJECT_UPDATE_FIELD, datagram)
                         
