@@ -547,6 +547,12 @@ class Client:
             # Tell the client about the response.
             self.sendMessage(sendId, dg)
 
+        elif msgType == CLIENT_GET_FRIEND_LIST:
+            dg = Datagram()
+            dg.addUint8(0)
+            dg.addUint16(0)
+            self.sendMessage(CLIENT_GET_FRIEND_LIST_RESP, dg)
+            
         else:
             print("Received unknown message: %d" % msgType)
 
