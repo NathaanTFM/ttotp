@@ -8,7 +8,6 @@ class DatabaseObject:
         self.dclass = dclass
         self.fields = {}
         
-        
     def packRequired(self, dg):
         packer = DCPacker()
         for index in range(self.dclass.getNumInheritedFields()):
@@ -41,7 +40,36 @@ class DatabaseObject:
                 
         dg.addUint16(count)
         dg.appendData(packer.getBytes())
+    
+    def packField(self, fieldName, value):
+        field = self.dclass.getFieldByName(fieldName)
+        if not field:
+            return None
         
+        packer = DCPacker()
+        packer.beginPack(field)
+        field.packArgs(packer, value)
+        packer.endPack()
+        
+        return packer.getBytes()
+        
+    def unpackField(self, fieldName, data):
+        packer = DCPacker()
+
+        if not data:
+            return None
+            
+        packer.setUnpackData(data)
+        
+        field = self.dclass.getFieldByName(fieldName)
+        if not field:
+            return None
+            
+        packer.beginUnpack(field)
+        value = field.unpackArgs(packer)
+        packer.endUnpack()
+
+        return value
         
     @classmethod
     def fromBinary(cls, dbss, data):
@@ -168,5 +196,3 @@ class DatabaseObject:
             self.fields[field.getName()] = values[0]
             
         self.dbss.saveDatabaseObject(self)
-        
-        

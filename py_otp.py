@@ -17,8 +17,11 @@ class PyOTP:
         
         # DC File
         self.dc = DCFile()
-        self.dc.read(Filename("etc", "otp.dc"))
-        self.dc.read(Filename("etc", "toon.dc"))
+        
+        self.dclassesByName = {}
+        self.dclassesByNumber = {}
+        
+        self.readDCFile(["../otp/src/configfiles/otp.dc", "../toontown/src/configfiles/toon.dc"])
         
         # "Handlers"
         self.messageDirector = MessageDirector(self)
@@ -63,6 +66,7 @@ class PyOTP:
                     data = None
                     
                 if not data:
+                    print("Dropping client %s!" % (str(self.clients[sock])))
                     del self.clients[sock]
                     
                     if type(client) == MDClient:
@@ -76,6 +80,58 @@ class PyOTP:
                 else:
                     client.onData(data)
                     
+    def readDCFile(self, dcFileNames = None):
+        """
+        Reads in the dc files listed in dcFileNames, or if
+        dcFileNames is None, reads in all of the dc files listed in
+        the Config.prc file.
+        """
+
+        dcFile = self.dc
+        dcFile.clear()
+        self.dclassesByName = {}
+        self.dclassesByNumber = {}
+
+        if isinstance(dcFileNames, str):
+            # If we were given a single string, make it a list.
+            dcFileNames = [dcFileNames]
+
+        dcImports = {}
+        if dcFileNames == None:
+            readResult = dcFile.readAll()
+            if not readResult:
+                print("Could not read dc file.")
+        else:
+            for dcFileName in dcFileNames:
+                pathname = Filename(dcFileName)
+                readResult = dcFile.read(pathname)
+                if not readResult:
+                    print("Could not read dc file: %s" % (pathname))
+
+        # Now import all of the modules required by the DC file.
+        for n in range(dcFile.getNumImportModules()):
+            for i in range(dcFile.getNumImportSymbols(n)):
+                symbolName = dcFile.getImportSymbol(n, i)
+
+                # Maybe the symbol name is represented as "symbolName/AI".
+                suffix = symbolName.split('/')
+                symbolName = suffix[0]
+                suffix=suffix[1:]
+                for ext in suffix:
+                    dclass = dcFile.getClassByName(symbolName)
+                    if dclass:
+                        self.dclassesByName[symbolName + ext] = dclass
+
+        # Now get the class definition for the classes named in the DC
+        # file.
+        for i in range(dcFile.getNumClasses()):
+            dclass = dcFile.getClass(i)
+            number = dclass.getNumber()
+            className = dclass.getName()
+
+            self.dclassesByName[className] = dclass
+            if number >= 0:
+                self.dclassesByNumber[number] = dclass
                     
 
 if __name__ == "__main__":

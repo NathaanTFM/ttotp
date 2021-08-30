@@ -20,11 +20,11 @@ class ClientAgent:
         sock.listen(5)
         
         # SSL Context
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain('server.cert', 'server.key')
+        #context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        #context.load_cert_chain('server.cert', 'server.key')
 
         # GameServer sock and clients
-        self.sock = context.wrap_socket(sock, server_side=True)
+        self.sock = sock #context.wrap_socket(sock, server_side=True)
         self.clients = []
         
         # Every DNA file with visgroups. We don't care about all of them.
@@ -76,7 +76,7 @@ class ClientAgent:
             
         # We read the NameMaster
         self.nameDictionary = {}
-        with open("etc/NameMaster.txt", "r") as file:
+        with open("../toontown/src/configfiles/NameMasterEnglish.txt", "r") as file:
             for line in file:
                 if line.startswith("#"):
                     continue
@@ -215,10 +215,9 @@ class ClientAgent:
                 if client.avatarId is None:
                     continue
                     
-                if channel == client.avatarId + (1<<32):
+                if channel == client.avatarId + (1 << 32):
                     if code == STATESERVER_OBJECT_UPDATE_FIELD:
                         client.sendMessage(CLIENT_OBJECT_UPDATE_FIELD, datagram)
-                        
                     else:
                         raise Exception("Unexpected message on Puppet channel (code %d)" % code)
                         

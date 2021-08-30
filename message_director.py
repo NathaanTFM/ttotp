@@ -19,13 +19,11 @@ class MDClient:
         self.connectionURL = ""
         self.channels = set()
         self.postRemove = []
-        
-        
+
     def onLost(self):
         for x in self.postRemove:
             self.onDatagram(Datagram(x))
-            
-            
+
     def onData(self, data):
         self.buffer += data
         while len(self.buffer) >= 2:
@@ -37,15 +35,25 @@ class MDClient:
             self.buffer = self.buffer[length+2:]
         
             self.onDatagram(Datagram(bytes(packet)))
-            
-            
+
     def onDatagram(self, dg):
         di = DatagramIterator(dg)
+        
+        # First check if the datagram has anything in it.
+        if not di.getRemainingSize() >= 1:
+            print("Recieved Datagram was truncated!")
+            return
         
         count = di.getUint8()
         
         channels = []
         for _ in range(count):
+            # Check each loop to make sure we don't run out of size.
+            # We can't have a size less then 8, Because that's how big
+            # a 64 bit integer is at minimum.
+            if not di.getRemainingSize() >= 8:
+                print("Recieved Datagram was truncated!")
+                return
             channel = di.getUint64()
             channels.append(channel)
         
@@ -69,14 +77,14 @@ class MDClient:
                 
             elif code == CONTROL_SET_CON_URL:
                 self.connectionURL = di.getString()
-                
+
             else:
                 raise NotImplementedError("CONTROL_MESSAGE", code)
             
             print(self.connectionName, self.connectionURL, self.channels)
             
         else:
-            sender = di.getUint64()            
+            sender = di.getUint64()
             code = di.getUint16()
             
             for client in self.md.clients:
@@ -86,16 +94,20 @@ class MDClient:
                     
                 if client.channels.intersection(channels):
                     client.sendDatagram(dg)
-                
+
             # We send this message to OTP
             self.otp.handleMessage(channels, sender, code, Datagram(di.getRemainingBytes()))
-                
             
+    def isUberdog(self):
+        return self.connectionName == "UberDog"
+        
+    def getPrimaryChannel(self):
+        return list(self.channels)[0]
+
     def sendDatagram(self, dg):
         self.sock.send(struct.pack("<H", dg.getLength()))
         self.sock.send(bytes(dg))
-        
-        
+
 class MessageDirector:
     def __init__(self, otp):
         # Main OTP
@@ -109,7 +121,13 @@ class MessageDirector:
         # MD Clients
         self.clients = []
         
+    def getUberdog(self):
+        for client in self.clients:
+            if client.isUberdog():
+                return client
         
+        return None
+
     def sendMessage(self, channels, sender, code, datagram):
         """
         Send a message to MD

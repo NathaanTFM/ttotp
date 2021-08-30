@@ -1,14 +1,15 @@
 from panda3d.core import Datagram
 from panda3d.direct import DCPacker
-
     
 class DistributedObject:
+
     def __init__(self, doId, dclass, parentId, zoneId):
         self.doId = doId
         self.dclass = dclass
         self.parentId = parentId
         self.zoneId = zoneId
         
+        self.senders = []
         self.senderId = None
         
         self.fields = {}
@@ -17,11 +18,9 @@ class DistributedObject:
             field = self.dclass.getInheritedField(index)
             if (field.isRequired() or field.isRam()) and field.asAtomicField():
                 self.fields[field.getNumber()] = None
-            
-            
+
     def update(self, field, *values):
         self.fields[self.dclass.getFieldByName(field).getNumber()] = values
-        
         
     def packField(self, dg, field):
         packer = DCPacker()
@@ -29,28 +28,24 @@ class DistributedObject:
         
         if field.getNumber() in self.fields:
             field.packArgs(packer, self.fields[field.getNumber()])
-            
         else:
             packer.packDefaultValue()
             
         packer.endPack()
         dg.appendData(packer.getBytes())
-        
-        
+
     def packRequired(self, dg):
         for index in range(self.dclass.getNumInheritedFields()):
             field = self.dclass.getInheritedField(index)
             if field.isRequired() and field.asAtomicField():
                 self.packField(dg, field)
-        
-        
+
     def packRequiredBroadcast(self, dg):
         for index in range(self.dclass.getNumInheritedFields()):
             field = self.dclass.getInheritedField(index)
             if (field.isRequired() and field.isBroadcast()) and field.asAtomicField():
                 self.packField(dg, field)
-        
-        
+
     def packOther(self, dg):
         dg2 = Datagram()
         count = 0
@@ -95,13 +90,11 @@ class DistributedObject:
             
         di.skipBytes(packer.getNumUnpackedBytes())
         
-        
     def receiveRequired(self, di):
         for index in range(self.dclass.getNumInheritedFields()):
             field = self.dclass.getInheritedField(index)
             if field.isRequired() and field.asAtomicField():
                 self.receiveField(field, di)
-        
         
     def receiveRequiredBroadcast(self, di):
         for index in range(self.dclass.getNumInheritedFields()):
@@ -109,16 +102,12 @@ class DistributedObject:
             if field.isRequired() or field.asAtomicField():
                 self.receiveField(field, di)
         
-        
     def receiveOther(self, di):
         for n in range(di.getUint16()):
             index = di.getUint16()
             
             field = self.dclass.getFieldByIndex(index)
             self.receiveField(field, di)
-            
-            
+
     def __repr__(self):
         return "<" + self.dclass.getName() + " instance at " + str(self.doId) + ", in " + str(self.parentId) + " zone " + str(self.zoneId) + ">"
-        
-        

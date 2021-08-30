@@ -52,18 +52,15 @@ class Client:
         del self.otp.clients[self.sock]
         self.agent.clients.remove(self)
         
-        
     def onAvatarDelete(self):
         # Our avatar got deleted
         self.avatarId = 0
         self.disconnect(153)
         
-        
     def onLost(self):
         # We remove the avatar if we're disconnecting. Bye!
         if self.avatarId:
-            self.chooseAvatar(0)
-
+            self.removeAvatar()
 
     def onData(self, data):
         self.buffer += data
@@ -86,6 +83,10 @@ class Client:
         if msgType == CLIENT_HEARTBEAT:
             # TODO: Keep track of heartbeats.
             self.sendMessage(CLIENT_HEARTBEAT, dg)
+            
+        elif msgType == CLIENT_DISCONNECT:
+            # Luckily for us, Super simple.
+            self.disconnect()
 
         elif msgType == CLIENT_CREATE_AVATAR:
             # Client wants to create an avatar
@@ -97,18 +98,21 @@ class Client:
 
             # Is avPosition valid?
             if not 0 <= avPosition < 6:
-                raise Exception("Client sent an invalid av position")
+                print("Client sent an invalid av position")
+                return
 
             # Doesn't it already have an avatar at this slot?
             accountAvSet = self.account.fields["ACCOUNT_AV_SET"]
 
             if accountAvSet[avPosition]:
-                raise Exception("Client tried to overwrite an avatar")
+                print("Client tried to overwrite an avatar")
+                return
 
             # We can create the avatar
             avatar = self.databaseServer.createDatabaseObject("DistributedToon")
             avatar.update("setDISLid", self.account.doId)
             avatar.update("setDNAString", dnaString)
+            avatar.update("setPosIndex", avPosition)
 
             # We save the avatar in the account
             accountAvSet[avPosition] = avatar.doId
@@ -163,6 +167,10 @@ class Client:
                         name += " "
 
                     name += namePart
+                    
+            # Make sure the requested object exists.
+            if not self.databaseServer.hasDatabaseObject(avId):
+                return
 
             # We set the toon's name
             avatar = self.databaseServer.loadDatabaseObject(avId)
@@ -182,11 +190,13 @@ class Client:
 
             # But for now, we don't care. TODO
             if not self.account:
-                raise Exception("Client has no account")
+                print("Client has no account")
+                return
 
             avId = di.getUint32()
             if avId and not avId in self.account.fields["ACCOUNT_AV_SET"]:
-                raise Exception("Client sets the name of another Toon")
+                print("Client tried to set the name of another Toon!")
+                return
 
             name = di.getString()
 
@@ -200,21 +210,25 @@ class Client:
                 datagram.addString("")
 
                 self.sendMessage(CLIENT_SET_WISHNAME_RESP, datagram)
+                return
 
-            else:
-                # Client wants to set the name and we're just gonna
-                # allow him to.
-                avatar = self.databaseServer.loadDatabaseObject(avId)
-                avatar.update("setName", name)
+            # Make sure the requested object exists.
+            if not self.databaseServer.hasDatabaseObject(avId):
+                return
+            
+            # Client wants to set the name and we're just gonna
+            # allow him to.
+            avatar = self.databaseServer.loadDatabaseObject(avId)
+            avatar.update("setName", name)
 
-                datagram = Datagram()
-                datagram.addUint32(avatar.doId)
-                datagram.addUint16(0)
-                datagram.addString("")
-                datagram.addString(name)
-                datagram.addString("")
+            datagram = Datagram()
+            datagram.addUint32(avatar.doId)
+            datagram.addUint16(0)
+            datagram.addString("")
+            datagram.addString(name)
+            datagram.addString("")
 
-                self.sendMessage(CLIENT_SET_WISHNAME_RESP, datagram)
+            self.sendMessage(CLIENT_SET_WISHNAME_RESP, datagram)
 
         elif msgType == CLIENT_LOGIN_2:
             print("CLIENT_LOGIN_2")
@@ -374,9 +388,24 @@ class Client:
                             dg.addUint32(do.doId)
                             self.sendMessage(CLIENT_OBJECT_DISABLE, dg)
 
+                    for do in self.stateServer.dbObjects.values():
+                        # If the object is not visible anymore, we disable it
+                        # (it's in the removed interest zones, but not in the new interest (or any current interest) zones)
+                        if do.parentId == parentId and do.zoneId in oldZones and not (do.zoneId in zones or self.hasInterest(do.parentId, do.zoneId)):
+                            dg = Datagram()
+                            dg.addUint32(do.doId)
+                            self.sendMessage(CLIENT_OBJECT_DISABLE, dg)
+
                 else:
                     # We only check if we're no longer interested in
                     for do in self.stateServer.objects.values():
+                        if do.parentId == oldParentId and do.zoneId in oldZones and not self.hasInterest(do.parentId, do.zoneId):
+                            dg = Datagram()
+                            dg.addUint32(do.doId)
+                            self.sendMessage(CLIENT_OBJECT_DISABLE, dg)
+                            
+                    # We only check if we're no longer interested in
+                    for do in self.stateServer.dbObjects.values():
                         if do.parentId == oldParentId and do.zoneId in oldZones and not self.hasInterest(do.parentId, do.zoneId):
                             dg = Datagram()
                             dg.addUint32(do.doId)
@@ -413,7 +442,8 @@ class Client:
 
             # Did the interest exist?
             if not handle in self.interests:
-                raise Exception("Client tried to remove an unexisting interest")
+                print("Client tried to remove an unexisting interest")
+                return
 
             # We get what the interest was
             oldParentId, oldZones = self.interests[handle]
@@ -424,6 +454,12 @@ class Client:
 
             # We disable all the objects we're no longer interested in
             for do in self.stateServer.objects.values():
+                if do.parentId == oldParentId and do.zoneId in oldZones and not self.hasInterest(do.parentId, do.zoneId):
+                    dg = Datagram()
+                    dg.addUint32(do.doId)
+                    self.sendMessage(CLIENT_OBJECT_DISABLE, dg)
+                    
+            for do in self.stateServer.dbObjects.values():
                 if do.parentId == oldParentId and do.zoneId in oldZones and not self.hasInterest(do.parentId, do.zoneId):
                     dg = Datagram()
                     dg.addUint32(do.doId)
@@ -440,7 +476,8 @@ class Client:
             if not self.account:
                 # TODO Should we boot the client out or just set a bad returnCode?
                 # For now we'll throw an exception as this should never happen.
-                raise Exception("Client asked avatars with no account")
+                print("Client asked avatars with no account")
+                return
 
             dg = Datagram()
             dg.addUint8(0) # returnCode
@@ -452,7 +489,7 @@ class Client:
             # If avId is 0, it disconnected.
             avId = di.getUint32()
 
-            self.chooseAvatar(avId)
+            self.handleSetAvatar(avId)
 
         elif msgType == CLIENT_OBJECT_UPDATE_FIELD:
             # Client wants to update a do object
@@ -464,18 +501,24 @@ class Client:
             dg.addUint16(fieldId)
             dg.appendData(di.getRemainingBytes())
 
-            # Can we send this field?
-            if not doId in self.stateServer.objects:
-                raise Exception("Attempt to update a field but DoId not found")
-
-            do = self.stateServer.objects[doId]
+            # Can we send this field? If not just return.
+            if not doId in self.stateServer.objects and not doId in self.stateServer.dbObjects:
+                print("Avatar %d attempted to update a field %d but doId %d was not found" % (self.avatarId, fieldId, doId))
+                return
+            
+            if not doId in self.stateServer.dbObjects:
+                do = self.stateServer.objects[doId]
+            else:
+                do = self.stateServer.dbObjects[doId]
 
             field = do.dclass.getFieldByIndex(fieldId)
             if not field:
-                raise Exception("Attempt to update a field but it was not found")
+                print("Avatar %d attempted to update a field but it was not found!" % (self.avatarId))
+                return
 
             if not (field.isClsend() or (field.isOwnsend() and do.doId == self.avatarId)): # We probably should check for owner stuff too but Toontown does not implement it
-                raise Exception("Attempt to update a field but we don't have the rights")
+                print("Avatar %d attempted to update a field but they don't have the rights!" % (self.avatarId))
+                return
 
             # Ignore DistributedNode and DistributedSmoothNode fields for debugging
             if field.getName() not in ("setX", "setY", "setZ", "setH", "setP", "setR", "setPos", "setHpr", "setPosHpr", "setXY", "setXZ", "setXYH", "setXYZH",
@@ -506,13 +549,139 @@ class Client:
 
             # Can we move it?
             if doId != self.avatarId:
-                raise Exception("Client wants to move an object it doesn't own")
+                print("Client wants to move an object it doesn't own")
+                return
 
             # We tell the StateServer that we're moving an object.
             dg = Datagram()
             dg.addUint32(parentId)
             dg.addUint32(zoneId)
             self.messageDirector.sendMessage([doId], self.avatarId, STATESERVER_OBJECT_SET_ZONE, dg)
+            
+        elif msgType == CLIENT_REMOVE_FRIEND:
+            # Friend to remove
+            doId = di.getUint32()
+            
+            # Check if the target's database object exists.
+            if self.databaseServer.hasDatabaseObject(doId):
+                target = self.databaseServer.loadDatabaseObject(doId)
+                
+                # Make sure the friends list field exists.
+                if "setFriendsList" in target.fields:
+                    friendsList = target.fields["setFriendsList"][0]
+                    
+                    for i in range(0, len(friendsList)):
+                        if friendsList[i][0] == self.avatarId:
+                            # Make sure we delete it.
+                            del target.fields["setFriendsList"][0][i]
+                            break
+                        # If we aren't ever found. We weren't on their list to begin with.
+                
+                # Save the removal to the database.
+                self.databaseServer.saveDatabaseObject(target)
+            
+            # Check if our database object exists. 
+            if self.databaseServer.hasDatabaseObject(self.avatarId):   
+                avatar = self.databaseServer.loadDatabaseObject(self.avatarId)
+                
+                # Make sure the friends list field exists.
+                if "setFriendsList" in avatar.fields:
+                    friendsList = avatar.fields["setFriendsList"][0]
+                    
+                    for i in range(0, len(friendsList)):
+                        if friendsList[i][0] == doId:
+                            # Make sure we delete it.
+                            del avatar.fields["setFriendsList"][0][i]
+                            break
+                        # If they aren't ever found. They weren't ever on our list to begin with.
+            
+                # Save the removal to the database.
+                self.databaseServer.saveDatabaseObject(avatar)
+            
+        elif msgType in (CLIENT_GET_FRIEND_LIST, CLIENT_GET_FRIEND_LIST_EXTENDED):
+            # We support both types of getting the friends list here.
+            if msgType == CLIENT_GET_FRIEND_LIST:
+                sendId = CLIENT_GET_FRIEND_LIST_RESP
+            elif msgType == CLIENT_GET_FRIEND_LIST_EXTENDED:
+                sendId = CLIENT_GET_FRIEND_LIST_EXTENDED_RESP
+                
+            # If we don't have a chosen response. Just don't respond at all.
+            # There's no point in humoring them.
+            if self.avatarId == 0:
+                return
+            
+            # If our OWN database object doesn't exist... Perhaps we have bigger issues..            
+            if not self.databaseServer.hasDatabaseObject(self.avatarId):
+                return
+            
+            fields = self.databaseServer.loadDatabaseObject(self.avatarId).fields
+            
+            if not "setFriendsList" in fields:
+                dg = Datagram()
+                dg.addUint8(1) # 1 - Field does not exist, Therefore they have no friends.
+                self.sendMessage(sendId, dg)
+                return
+            
+            friendsList = fields["setFriendsList"][0]
+            
+            count = 0
+            friendData = {}
+            for i in range(0, len(friendsList)):
+                friendId = friendsList[i][0]
+                
+                # Make sure our friend actually has a database object!
+                # If it doesn't, Skip over it and emit a warning.
+                if not self.databaseServer.hasDatabaseObject(friendId):
+                    print("Friend %d for Avatar %d doesn't have a database object!" % (friendId, self.avatarId))
+                    continue
+                
+                # Load our fields from the friend in question.
+                friendsFields = self.databaseServer.loadDatabaseObject(friendId).fields
+                
+                # We're missing a required field, And this version of getting the list doesn't sanity check these
+                # individually.
+                # We only run this check for the non-extended friends list type.
+                if msgType == CLIENT_GET_FRIEND_LIST and (not 'setName' in friendsFields or not 'setDNAString' in friendsFields):
+                    print("Friend %d for Avatar %d is missing a field in the database!" % (friendId, self.avatarId))
+                    continue
+                 
+                # If we don't have a name, We default to an empty string.
+                name = ''
+                if 'setName' in friendsFields:
+                    name = friendsFields['setName'][0]
+                    
+                # If we don't have a dna string, We default to an empty byte string.
+                dnaString = b''
+                if 'setDNAString' in friendsFields:
+                    dnaString = friendsFields['setDNAString'][0]
+                    
+                # It doesn't matter if there's a pet or not,
+                # If the field isn't present, We default to 0.
+                petId = 0
+                if 'setPetId' in friendsFields:
+                    petId = friendsFields['setPetId'][0]
+                
+                friendData[count] = (friendId, name, dnaString, petId)
+                count += 1
+                
+            # Create our working datagram.
+            dg = Datagram()
+            
+            # We've got the data already, So add the flag of success.
+            dg.addUint8(0)
+            
+            # Add the amount of friends we're sending over.
+            dg.addUint16(len(friendData))
+            
+            # Add all of the data in the list we collected.
+            for i in friendData:
+                data = friendData[i]
+                dg.addUint32(data[0]) # - doId
+                dg.addString(data[1]) # - name
+                dg.addString(data[2].decode('utf-8')) # - dna string
+                dg.addUint32(data[3]) # - pet id
+                
+            self.sendMessage(sendId, dg)
 
         elif msgType in (CLIENT_GET_AVATAR_DETAILS, CLIENT_GET_PET_DETAILS):
             # Client wants to get information on a object.
@@ -531,6 +700,10 @@ class Client:
 
             # Get the dclass object by name.
             dclass = self.databaseServer.dc.getClassByName(dclassName)
+            
+            # Make sure the requested object exists.
+            if not self.databaseServer.hasDatabaseObject(doId):
+                return
 
             # Grab the fields from the object via the database.
             fields = self.databaseServer.loadDatabaseObject(doId).fields
@@ -656,6 +829,16 @@ class Client:
             # If the object is in one of the new interest zones, we get it
             if do.parentId == parentId and do.zoneId in zones:
                 objects.append(do)
+                
+        for do in self.stateServer.dbObjects.values():
+            # We're not sending our own object because
+            # we already know who we are (we are the owner)
+            if do.doId == self.avatarId:
+                continue
+
+            # If the object is in one of the new interest zones, we get it
+            if do.parentId == parentId and do.zoneId in zones:
+                objects.append(do)
 
         # We sort them by dclass (fix some issues)
         objects.sort(key = lambda x: x.dclass.getNumber())
@@ -670,50 +853,98 @@ class Client:
             do.packRequiredBroadcast(dg)
             do.packOther(dg)
             self.sendMessage(CLIENT_CREATE_OBJECT_REQUIRED_OTHER, dg)
+            
+    def handleSetAvatar(self, avId):
+        # If avId is 0, That means it's a request to remove our avatar.
+        if not avId:
+            self.removeAvatar()
+            return
+        
+        # If we already have a avatar, Remove it.
+        if self.avatarId:
+            self.removeAvatar()
+        
+        self.setAvatar(avId)
 
-    def chooseAvatar(self, avId):
+    def setAvatar(self, avId):
         """
         Choose an avatar
         """
-        if avId:
-            if self.avatarId:
-                raise Exception("Client tried to pick an avatar but it already has one")
+        if not avId in self.account.fields["ACCOUNT_AV_SET"]:
+            print("Client tried to pick an avatar it doesn't own.")
+            return
 
-            if not avId in self.account.fields["ACCOUNT_AV_SET"]:
-                raise Exception("Client tried to pick an avatar it doesn't own")
+        # We load the avatar from the database
+        avatar = self.databaseServer.loadDatabaseObject(avId)
 
-            # We load the avatar from the database
-            avatar = self.databaseServer.loadDatabaseObject(avId)
+        # We ask STATESERVER to create our object
+        dg = Datagram()
+        dg.addUint32(0)
+        dg.addUint32(0)
+        dg.addUint16(avatar.dclass.getNumber())
+        dg.addUint32(avatar.doId)
+        avatar.packRequired(dg)
+        avatar.packOther(dg)
+        self.messageDirector.sendMessage([20100000], avatar.doId, STATESERVER_OBJECT_GENERATE_WITH_REQUIRED_OTHER, dg)
 
-            # We ask STATESERVER to create our object
-            dg = Datagram()
-            dg.addUint32(0)
-            dg.addUint32(0)
-            dg.addUint16(avatar.dclass.getNumber())
-            dg.addUint32(avatar.doId)
-            avatar.packRequired(dg)
-            avatar.packOther(dg)
-            self.messageDirector.sendMessage([20100000], avatar.doId, STATESERVER_OBJECT_GENERATE_WITH_REQUIRED_OTHER, dg)
+        # We probably should wait for an answer, but we're not threaded and everything is happening on the same script
+        # (tl;dr it's blocking), so we won't.
 
-            # We probably should wait for an answer, but we're not threaded and everything is happening on the same script
-            # (tl;dr it's blocking), so we won't.
+        # We remember who we are
+        self.avatarId = avatar.doId
 
-            # We remember who we are
-            self.avatarId = avatar.doId
+        # We can send that we are the proud owner of a DistributedToon!
+        dg = Datagram()
+        dg.addUint32(avatar.doId)
+        dg.addUint8(0)
+        avatar.packRequired(dg)
+        self.sendMessage(CLIENT_GET_AVATAR_DETAILS_RESP, dg)
+        
+        # If we have friends... We should probably let them know we're online!
+        if "setFriendsList" in avatar.fields:
+            friendsList = avatar.fields["setFriendsList"][0]
+            
+            # Get all of our friend ids.
+            friendIds = []
+            for i in range(0, len(friendsList)):
+                friendIds.append(friendsList[i][0])
+                
+            for client in self.agent.clients:
+                # If the id matches, It means this friend is online!
+                if client.avatarId in friendIds:
+                    dg = Datagram()
+                    dg.addUint32(self.avatarId)
+                    client.sendMessage(CLIENT_FRIEND_ONLINE, dg)
 
-            # We can send that we are the proud owner of a DistributedToon!
-            dg = Datagram()
-            dg.addUint32(avatar.doId)
-            dg.addUint8(0)
-            avatar.packRequired(dg)
-            self.sendMessage(CLIENT_GET_AVATAR_DETAILS_RESP, dg)
+    def removeAvatar(self):
+        """
+        Remove an avatar
+        """
+        if not self.avatarId:
+            print("Client tried to remove his avatar but they don't have one!")
+            return
+            
+        # We load the avatar from the database
+        avatar = self.databaseServer.loadDatabaseObject(self.avatarId)
+            
+        # If we have friends... We should probably let them know we're heading off.
+        if "setFriendsList" in avatar.fields:
+            friendsList = avatar.fields["setFriendsList"][0]
+            
+            # Get all of our friend ids.
+            friendIds = []
+            for i in range(0, len(friendsList)):
+                friendIds.append(friendsList[i][0])
+                
+            for client in self.agent.clients:
+                # If the id matches, It means this friend is online!
+                if client.avatarId in friendIds:
+                    dg = Datagram()
+                    dg.addUint32(self.avatarId)
+                    client.sendMessage(CLIENT_FRIEND_OFFLINE, dg)
 
-        else:
-            if not self.avatarId:
-                raise Exception("Client tried to remove his avatar but it already has none")
-
-            # We ask State Server to delete our object
-            dg = Datagram()
-            dg.addUint32(self.avatarId)
-            self.messageDirector.sendMessage([self.avatarId], self.avatarId, STATESERVER_OBJECT_DELETE_RAM, dg)
-            self.avatarId = 0
+        # We ask State Server to delete our object
+        dg = Datagram()
+        dg.addUint32(self.avatarId)
+        self.messageDirector.sendMessage([self.avatarId], self.avatarId, STATESERVER_OBJECT_DELETE_RAM, dg)
+        self.avatarId = 0
