@@ -65,6 +65,7 @@ class StateServer:
         
         # We send the update to the interested OTP clients
         channels = self.getInterested(do, sender)
+        channels.append(sender)
         if channels:
             self.messageDirector.sendMessage(channels, sender, STATESERVER_OBJECT_DELETE_RAM, dg)
         
@@ -201,7 +202,7 @@ class StateServer:
                                 dg = Datagram()
                                 dg.addUint32(do.doId)
                                 
-                                self.messageDirector.sendMessage([prevParentChannel], sender, STATESERVER_OBJECT_DELETE_RAM, dg)
+                                self.messageDirector.sendMessage([prevParentChannel], sender, STATESERVER_OBJECT_LEAVING_AI_INTEREST, dg)
                             
                             channels = self.getInterested(do, sender)
                             if channels:
